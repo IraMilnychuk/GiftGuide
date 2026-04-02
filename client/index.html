@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GiftGuide</title>
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="img/Bant.png">
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Ваш CSS -->
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="app">
+  <!-- ===== HEADER ===== -->
+  <section class="section-block header-section" :class="{ 'catalog-mode': currentPage === 'catalog' }">
+    <header class="header-line container-fluid">
+      <div class="row w-100 align-items-center">
+        <div class="col-md-3 header-logo">
+          <a href="#" @click.prevent="goHome">
+            <img src="img/Logo.svg" alt="Логотип" class="logo-img">
+          </a>
+        </div>
+        <div class="col-md-6 header-search position-relative">
+          <input type="text" placeholder="Пошук подарунків..." class="search-input form-control" 
+                 v-model="searchQuery" 
+                 @keyup.enter="applySearch"
+                 @input="showSuggestions = true"
+                 @focus="showSuggestions = true"
+                 @blur="hideSuggestionsDelayed">
+          <div class="search-suggestions" v-if="showSuggestions && searchSuggestions.length">
+            <div v-for="suggestion in searchSuggestions" :key="suggestion.id" 
+                 class="suggestion-item" 
+                 @click="selectSearchSuggestion(suggestion.title)">
+              <img :src="'img/' + suggestion.image" class="suggestion-img">
+              <div class="suggestion-info">
+                <div class="suggestion-title">{{ suggestion.title }}</div>
+                <div class="suggestion-price">{{ suggestion.price }} грн</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-4 col-md-3 text-end header-auth">
+          <template v-if="!isLoggedIn">
+            <a href="#" class="auth-link" @click.prevent="openAuthModal('login')">Вхід</a>
+            <span class="auth-divider">|</span>
+            <a href="#" class="auth-link" @click.prevent="openAuthModal('register')">Реєстрація</a>
+          </template>
+          <template v-else>
+            <span class="welcome-msg">Вітаємо, {{ userName || 'Користувач' }}</span>
+            <button class="home-icon" @click="openCabinetModal">🏠</button>
+            <a href="#" class="auth-link" @click.prevent="logout">Вийти</a>
+          </template>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== ФІЛЬТРИ (горизонтальні) ===== -->
+    <nav class="filters-line">
+      <div v-for="(filter, idx) in filters" :key="idx" class="filter-item"
+           @mouseenter="openDropdown(idx)"
+           @mouseleave="scheduleClose(idx)">
+        <button class="filter-btn" @click="openDropdown(idx)">
+          {{ filter.selected || filter.label }}
+        </button>
+        <div class="dropdown"
+             v-show="filter.isOpen"
+             @mouseenter="cancelClose(idx)"
+             @mouseleave="scheduleClose(idx)">
+          <a href="#" v-for="option in filter.options" :key="option"
+             @click.prevent="applyFilterAndGoToCatalog(idx, option)">
+            {{ option }}
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Банер (показується тільки на головній) -->
+    <div class="banner" v-if="currentPage === 'home'">
+      <img src="img/banner.jpg" class="banner-img">
+      <button class="banner-btn" @click="openModal">Підібрати подарунок</button>
+    </div>
+  </section>
+
+  <!-- ===== ГОЛОВНА СТОРІНКА ===== -->
+  <template v-if="currentPage === 'home'">
+    <div class="mint-divider"></div>
+    <section class="section-block popular-section">
+      <h2 class="section-title text-center">Популярні подарунки</h2>
+      <div class="popular-cards" @mouseenter="pauseAutoSlide" @mouseleave="startAutoSlide">
+        <button class="arrow-btn arrow-left" @click="prevCard">&#8249;</button>
+        <div class="cards-row">
+          <div v-for="(item, index) in popularCards" :key="index" class="card-placeholder"
+               :class="{ 'card-left': index === 0, 'card-center': index === 1, 'card-right': index === 2 }">
+            <img :src="'img/' + item.image" class="card-img">
+            <div class="card-info">
+              <h3 class="card-title">{{ item.title }}</h3>
+              <div class="card-prices">
+                <span class="current-price">{{ item.price }} грн</span>
+                <span class="old-price" v-if="item.oldPrice">{{ item.oldPrice }} грн</span>
+              </div>
+              <button class="card-btn" @click="openProductModal(item)">Переглянути</button>
+              <div class="card-rating">
+                <span v-for="star in 5" :key="star"
+                      :class="['star', getStarClass(item.rating, star)]"
+                      @click="isLoggedIn ? updateRating(item, star) : promptLogin()"> ★ </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="arrow-btn arrow-right" @click="nextCard">&#8250;</button>
+      </div>
+    </section>
+
+    <div class="mint-divider"></div>
+
+    <!-- ПОВНИЙ БАНЕР З ТЕКСТОМ -->
+    <section class="section-block full-banner-section">
+      <img src="img/full-banner.jpg" class="full-banner-img">
+      <div class="full-banner-text">
+        <h2 class="full-banner-title">Чому саме GiftGuide?</h2>
+        <ul class="full-banner-list">
+          <li>Швидкий підбір подарунка без зайвих зусиль</li>
+          <li>Персоналізовані рекомендації на основі ваших уподобань</li>
+          <li>Величезний вибір подарунків на будь-який бюджет</li>
+          <li>Прямі посилання на Rozetka – найпопулярніший магазин в Україні</li>
+          <li>Генератор випадкового подарунка для найсміливіших ідей</li>
+          <li>Зручний пошук та фільтри за будь-якими критеріями</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="mint-divider"></div>
+
+    <section class="section-block categories-section">
+      <h2 class="section-title text-center">Категорія подарунків</h2>
+      <div class="categories-grid">
+        <div v-for="category in categoryList" :key="category" class="category-card" @click="goToCatalogWithFilter('recipient', category)">
+          <img :src="'img/category-' + category.toLowerCase().replace(/ /g, '-') + '.jpg'" class="category-img">
+          <span class="category-label">{{ category }}</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="mint-divider"></div>
+    <section class="section-block last-banner">
+      <div class="banner">
+        <img src="img/banner2.jpg" class="banner-img">
+        <p class="banner-text">текст</p>
+        <button class="banner-btn">Підібрати</button>
+      </div>
+    </section>
+  </template>
+
+  <!-- ===== СТОРІНКА КАТАЛОГУ ===== -->
+  <div v-else class="catalog-page">
+    <div class="catalog-container">
+      <div class="catalog-header">
+        <button class="back-home-btn" @click="goHome">← На головну</button>
+        <h2>Каталог подарунків</h2>
+      </div>
+      <div class="catalog-content">
+        <!-- Ліва панель фільтрів -->
+        <aside class="catalog-filters">
+          <div class="filter-group" v-for="filter in modalFilters" :key="filter.label">
+            <h4>{{ filter.label }}</h4>
+            <div class="filter-options">
+              <label v-for="option in filter.options" :key="option">
+                <input type="checkbox" :value="option" v-model="selectedFilters[filter.label]"> {{ option }}
+              </label>
+            </div>
+          </div>
+          <button class="apply-filters-btn" @click="applyFilters">Застосувати фільтри</button>
+        </aside>
+
+        <!-- Права частина: сітка товарів -->
+        <div class="catalog-products">
+          <div v-if="filteredProducts.length === 0" class="no-products">
+            <p>Немає товарів, що відповідають фільтрам</p>
+          </div>
+          <div v-else class="products-grid">
+            <div v-for="item in filteredProducts" :key="item.id" class="product-card">
+              <img :src="'img/' + item.image" class="product-img">
+              <div class="product-info">
+                <h3 class="product-title">{{ item.title }}</h3>
+                <div class="product-prices">
+                  <span class="current-price">{{ item.price }} грн</span>
+                  <span class="old-price" v-if="item.oldPrice">{{ item.oldPrice }} грн</span>
+                </div>
+                <button class="product-btn" @click="openProductModal(item)">Переглянути</button>
+                <div class="product-rating">
+                  <span v-for="star in 5" :key="star" :class="['star', getStarClass(item.rating, star)]">★</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== МОДАЛЬНЕ ВІКНО ПІДБОРУ ===== -->
+  <div class="modal-overlay" v-if="showModal" @click.self="closeModal">
+    <div class="modal-container">
+      <button class="modal-close" @click="closeModal">&times;</button>
+      <h3 class="modal-title">Підібрати подарунок</h3>
+      <div class="modal-filters">
+        <div class="modal-filters-row">
+          <div v-for="(filter, idx) in modalFilters" :key="idx" class="modal-filter-item" @mouseenter="openModalDropdown(idx)" @mouseleave="scheduleModalClose(idx)">
+            <button class="modal-filter-btn">
+              {{ filter.selected || filter.label }}
+            </button>
+            <div class="modal-dropdown" v-show="filter.isOpen" @mouseenter="cancelModalClose(idx)" @mouseleave="scheduleModalClose(idx)">
+              <a href="#" v-for="option in filter.options" :key="option" @click.prevent="selectModalOption(idx, option)">
+                {{ option }}
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-submit">
+        <button class="modal-submit-btn" @click="findGift">Знайти подарунок</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== МОДАЛЬНЕ ВІКНО АВТОРИЗАЦІЇ ===== -->
+  <div class="modal-overlay" v-if="showAuthModal" @click.self="closeAuthModal">
+    <div class="modal-container auth-modal">
+      <button class="modal-close" @click="closeAuthModal">&times;</button>
+      <div class="auth-tabs">
+        <button class="auth-tab" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Вхід</button>
+        <button class="auth-tab" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Реєстрація</button>
+      </div>
+      <div v-if="authMode === 'login'">
+        <div class="auth-form">
+          <div class="auth-field">
+            <label>Email</label>
+            <input type="email" v-model="authEmail" placeholder="example@mail.com" class="auth-input">
+          </div>
+          <div class="auth-field">
+            <label>Пароль</label>
+            <input type="password" v-model="authPassword" placeholder="********" class="auth-input">
+          </div>
+          <div class="auth-forgot">
+            <a href="#" class="forgot-link" @click.prevent="forgotPassword">Забули пароль?</a>
+          </div>
+          <button class="auth-submit-btn" @click="submitAuth">Увійти</button>
+        </div>
+      </div>
+      <div v-else>
+        <div class="auth-form">
+          <div class="auth-field">
+            <label>Ім'я</label>
+            <input type="text" v-model="authName" placeholder="Іван Петренко" class="auth-input">
+          </div>
+          <div class="auth-field">
+            <label>Email</label>
+            <input type="email" v-model="authEmail" placeholder="example@mail.com" class="auth-input">
+          </div>
+          <div class="auth-field">
+            <label>Пароль</label>
+            <input type="password" v-model="authPassword" placeholder="********" class="auth-input">
+          </div>
+          <button class="auth-submit-btn" @click="submitAuth">Зареєструватися</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== МОДАЛЬНЕ ВІКНО ОСОБИСТОГО КАБІНЕТУ ===== -->
+  <div class="modal-overlay" v-if="showCabinetModal" @click.self="closeCabinetModal">
+    <div class="modal-container cabinet-modal">
+      <button class="modal-close" @click="closeCabinetModal">&times;</button>
+      <h3 class="modal-title">Особистий кабінет</h3>
+      <div class="cabinet-content">
+        <p><strong>Ім'я:</strong> {{ userName }}</p>
+        <p><strong>Email:</strong> {{ authEmail }}</p>
+        <h4>Обрані товари</h4>
+        <div v-if="favorites.length === 0" class="no-favorites">
+          <p>У вас ще немає обраних товарів.</p>
+        </div>
+        <div v-else class="favorites-list">
+          <div v-for="(fav, idx) in favorites" :key="idx" class="favorite-item">
+            <img :src="'img/' + fav.image" class="fav-img">
+            <div class="fav-info">
+              <a href="#" @click.prevent="openProductModal(fav)">{{ fav.title }}</a>
+              <span class="fav-price">{{ fav.price }} грн</span>
+            </div>
+            <button class="remove-fav" @click="removeFromFavorites(fav)">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== МОДАЛЬНЕ ВІКНО ДЕТАЛЬНОГО ПЕРЕГЛЯДУ ТОВАРУ ===== -->
+  <div class="modal-overlay" v-if="showProductModal" @click.self="closeProductModal">
+    <div class="modal-container product-modal">
+      <button class="modal-close" @click="closeProductModal">&times;</button>
+      <div class="product-modal-content">
+        <div class="product-gallery">
+          <div class="gallery-main">
+            <img :src="selectedProduct.images[currentImageIndex]" class="gallery-img">
+          </div>
+          <div class="gallery-nav" v-if="selectedProduct.images.length > 1">
+            <button class="gallery-arrow prev" @click="prevImage">&#8249;</button>
+            <span class="gallery-counter">{{ currentImageIndex+1 }} / {{ selectedProduct.images.length }}</span>
+            <button class="gallery-arrow next" @click="nextImage">&#8250;</button>
+          </div>
+        </div>
+        <div class="product-info">
+          <h2 class="product-title">
+            <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer">{{ selectedProduct.title }}</a>
+          </h2>
+          <div class="product-rating">
+            <span v-for="star in 5" :key="star" :class="['star', getStarClass(selectedProduct.rating, star)]" @click="isLoggedIn ? updateRating(selectedProduct, star) : promptLogin()"> ★ </span>
+            <span class="rating-value">{{ selectedProduct.rating }}</span>
+          </div>
+          <div class="product-prices">
+            <span class="current-price">{{ selectedProduct.price }} грн</span>
+            <span class="old-price" v-if="selectedProduct.oldPrice">{{ selectedProduct.oldPrice }} грн</span>
+          </div>
+          <div class="product-description">
+            <p>{{ selectedProduct.description }}</p>
+          </div>
+          <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer" class="product-buy-btn">
+            Купити на Rozetka
+          </a>
+          <div class="product-favorite">
+            <button class="favorite-btn" @click="addToFavorites(selectedProduct)">❤️ Додати в обране</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="row footer-content">
+        <div class="col-md-4 footer-col">
+          <h3 class="footer-heading">Контакти</h3>
+          <p>+380 XX XXX XX XX</p>
+          <p>info@example.com</p>
+        </div>
+        <div class="col-md-4 footer-col">
+          <h3 class="footer-heading">Навігація</h3>
+          <a href="#">Головна</a>
+          <a href="#">Каталог</a>
+          <a href="#">Про нас</a>
+        </div>
+        <div class="col-md-4 footer-col">
+          <h3 class="footer-heading">Соціальні мережі</h3>
+          <a href="#">Instagram</a>
+          <a href="#">Facebook</a>
+          <a href="#">Telegram</a>
+        </div>
+      </div>
+      <div class="footer-bottom text-center">
+        <p>&copy; 2026 Подарунки</p>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
