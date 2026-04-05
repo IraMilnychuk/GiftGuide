@@ -400,10 +400,6 @@ new Vue({
       }
       this.currentPage = 'cabinet';
     },
-    goToCatalogPage() {
-      this.currentPage = 'catalog';
-      this.saveState();
-    },
     clearRandomMode() { this.randomMode = false; this.randomProduct = null; this.selectedFilters['Ідеї'] = []; this.saveState(); this.$forceUpdate(); },
     
     goToCatalogWithFilter(filterType, value) {
@@ -443,9 +439,11 @@ new Vue({
     onSearchInput() { this.showSuggestions = true; },
     hideSuggestionsDelayed() { setTimeout(() => { this.showSuggestions = false; }, 200); },
     
+    // ВИПРАВЛЕНИЙ МЕТОД selectSearchSuggestion
     selectSearchSuggestion(title) {
         this.searchQuery = title;
         this.showSuggestions = false;
+       
         this.selectedFilters = {
             'Кому': [],
             'Привід': [],
@@ -501,7 +499,7 @@ new Vue({
       if (!event.target.closest('.header-search')) this.showSuggestions = false;
     },
 
-    // === DROPDOWN МОДАЛЬНОГО ВІКНА ===
+    // === DROPDOWN МОДАЛЬНОГО ВІКНА (основні фільтри) ===
     openModalDropdown(idx) {
       this.modalFilters.forEach((f, i) => {
         if (i !== idx && f.isOpen) {
@@ -525,6 +523,7 @@ new Vue({
       this.modalFilters[idx].isOpen = false;
     },
 
+    // Дропдауни для ціни та віку
     openPriceDropdown() {
       if (this.priceCloseTimer) clearTimeout(this.priceCloseTimer);
       this.priceDropdownOpen = true;
@@ -572,6 +571,7 @@ new Vue({
       this.ageDropdownOpen = false;
     },
 
+    // Дропдауни для інших фільтрів
     openGenderDropdown() { if (this.genderCloseTimer) clearTimeout(this.genderCloseTimer); this.genderDropdownOpen = true; },
     scheduleGenderClose() { this.genderCloseTimer = setTimeout(() => { this.genderDropdownOpen = false; }, 200); },
     cancelGenderClose() { if (this.genderCloseTimer) clearTimeout(this.genderCloseTimer); },
@@ -602,6 +602,7 @@ new Vue({
     cancelTagClose() { if (this.tagCloseTimer) clearTimeout(this.tagCloseTimer); },
     selectTag(id, name) { this.selectedTagId = id; this.selectedTagName = name || ''; this.tagDropdownOpen = false; },
 
+    // Модальне вікно підбору
     openModal() {
       this.selectedAgeId = null; this.selectedAgeName = '';
       this.selectedGenderId = null; this.selectedGenderName = '';
