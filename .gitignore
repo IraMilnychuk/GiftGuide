@@ -1,0 +1,22 @@
+# Залежності
+node_modules/
+
+# Конфігураційні та чутливі файли
+.env
+.env.local
+.env.*.local
+
+# Файли збірки та кешу
+/dist
+/build
+*.log
+npm-debug.log*
+.cache
+
+# Системні файли
+.DS_Store
+Thumbs.db
+
+# Файли IDE (Visual Studio Code, IntelliJ тощо)
+.vscode/
+.idea/

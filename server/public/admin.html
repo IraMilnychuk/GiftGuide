@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Адмін-панель GiftGuide</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        h1 { text-align: center; }
+        .login-form { max-width: 300px; margin: 100px auto; background: white; padding: 20px; border-radius: 8px; text-align: center; }
+        .product-item { border: 1px solid #ddd; margin-bottom: 20px; padding: 15px; border-radius: 5px; background: #fafafa; }
+        .product-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .filter-group { margin: 10px 0; }
+        button { margin: 5px; padding: 5px 10px; cursor: pointer; border: none; border-radius: 4px; }
+        .delete-btn { background: #dc3545; color: white; }
+        .save-btn { background: #28a745; color: white; }
+        .toggle-btn { background: #007bff; color: white; }
+        .add-btn, .edit-btn { background: #17a2b8; color: white; }
+        .edit-btn { background: #ffc107; color: black; }
+        .product-details { margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee; }
+        .filter-checkboxes label { margin-right: 15px; display: inline-block; }
+        .message { position: fixed; bottom: 20px; right: 20px; background: #28a745; color: white; padding: 10px; border-radius: 5px; display: none; z-index: 1000; }
+        .active-tab { background: #007bff; color: white; }
+        .tab-btn { background: #6c757d; color: white; margin-right: 10px; }
+        .review-item { border: 1px solid #ddd; margin-bottom: 15px; padding: 10px; border-radius: 5px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 700px; max-height: 90%; overflow-y: auto; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .form-row { display: flex; gap: 15px; }
+        .form-row .form-group { flex: 1; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+</head>
+<body>
+<div id="adminApp">
+    <!-- Форма входу -->
+    <div v-if="!authorized" class="login-form">
+        <h2>Вхід в адмін-панель</h2>
+        <input type="password" v-model="password" placeholder="Пароль" @keyup.enter="login">
+        <button @click="login">Увійти</button>
+        <p v-if="error" style="color:red;">{{ error }}</p>
+    </div>
+
+    <!-- Адмін-панель після входу -->
+    <div v-else class="container">
+        <h1>Адмін-панель GiftGuide</h1>
+        <div>
+            <button class="tab-btn" @click="activeTab = 'products'" :class="{ 'active-tab': activeTab === 'products' }">Товари</button>
+            <button class="tab-btn" @click="activeTab = 'reviews'" :class="{ 'active-tab': activeTab === 'reviews' }">Відгуки</button>
+        </div>
+
+        <!-- Вкладка Товари -->
+        <div v-if="activeTab === 'products'">
+            <button class="add-btn" @click="openAddProductModal">+ Додати товар</button>
+            <div v-for="product in products" :key="product.id" class="product-item">
+                <div class="product-header">
+                    <strong>{{ product.title }}</strong>
+                    <div>
+                        <button class="edit-btn" @click="openEditProductModal(product)">Редагувати</button>
+                        <button class="toggle-btn" @click="toggleFilters(product.id)">Фільтри</button>
+                        <button class="delete-btn" @click="deleteProduct(product.id)">Видалити</button>
+                    </div>
+                </div>
+                <div v-if="showFilters[product.id]" class="product-details">
+                    <div v-for="cat in filterCategories" :key="cat.name" class="filter-group">
+                        <strong>{{ cat.label }}:</strong>
+                        <div class="filter-checkboxes">
+                            <label v-for="item in allFilters[cat.name]" :key="item.id">
+                                <input type="checkbox" :value="item.id" v-model="tempFilters[product.id][cat.name]"> {{ item.name }}
+                            </label>
+                        </div>
+                    </div>
+                    <button class="save-btn" @click="saveFilters(product.id)">Зберегти фільтри</button>
+                </div>
+            </div>
+            <div v-if="products.length === 0">Немає товарів.</div>
+        </div>
+
+        <!-- Вкладка Відгуки -->
+        <div v-else-if="activeTab === 'reviews'">
+            <div v-for="review in reviews" :key="review.id" class="review-item">
+                <p><strong>Товар:</strong> {{ review.product_title || review.product_id }}</p>
+                <p><strong>Користувач:</strong> {{ review.user_name || review.user_id }}</p>
+                <p><strong>Оцінка:</strong> {{ review.rating }} ★</p>
+                <p><strong>Коментар:</strong> {{ review.comment || 'немає' }}</p>
+                <button class="delete-btn" @click="deleteReview(review.id)">Видалити відгук</button>
+            </div>
+            <div v-if="reviews.length === 0">Немає відгуків.</div>
+        </div>
+    </div>
+
+    <!-- Модальне вікно для додавання/редагування товару -->
+    <div id="productModal" class="modal">
+        <div class="modal-content">
+            <h2>{{ editMode ? 'Редагувати товар' : 'Додати товар' }}</h2>
+            <form @submit.prevent="saveProduct">
+                <div class="form-group">
+                    <label>Назва *</label>
+                    <input type="text" v-model="productForm.title" required>
+                </div>
+                <div class="form-group">
+                    <label>Опис</label>
+                    <textarea v-model="productForm.description" rows="3"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Ціна *</label>
+                        <input type="number" v-model.number="productForm.price" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Стара ціна</label>
+                        <input type="number" v-model.number="productForm.old_price" step="0.01">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Рейтинг (0-5)</label>
+                        <input type="number" v-model.number="productForm.rating" step="0.1" min="0" max="5">
+                    </div>
+                    <div class="form-group">
+                        <label>Головне зображення *</label>
+                        <input type="text" v-model="productForm.image" placeholder="наприклад, 1.png" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Додаткові зображення (JSON-масив)</label>
+                    <input type="text" v-model="productForm.images" placeholder='["1.png","1(1).png"]'>
+                </div>
+                <div class="form-group">
+                    <label>Посилання на Rozetka *</label>
+                    <input type="url" v-model="productForm.link" required>
+                </div>
+                <div class="form-group">
+                    <label>Активний</label>
+                    <select v-model="productForm.is_active">
+                        <option :value="1">Так</option>
+                        <option :value="0">Ні</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Персоналізація</label>
+                    <select v-model="productForm.personalization">
+                        <option :value="1">Так</option>
+                        <option :value="0">Ні</option>
+                    </select>
+                </div>
+                <h3>Фільтри (множинний вибір)</h3>
+                <div v-for="cat in filterCategories" :key="cat.name" class="filter-group">
+                    <strong>{{ cat.label }}:</strong>
+                    <div class="filter-checkboxes">
+                        <label v-for="item in allFilters[cat.name]" :key="item.id">
+                            <input type="checkbox" :value="item.id" v-model="productForm[cat.name]"> {{ item.name }}
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="save-btn">Зберегти</button>
+                <button type="button" @click="closeModal">Скасувати</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="message" class="message">{{ messageText }}</div>
+</div>
+
+<script>
+new Vue({
+    el: '#adminApp',
+    data: {
+        authorized: false,
+        password: '',
+        error: '',
+        adminToken: '',
+        activeTab: 'products',
+        products: [],
+        reviews: [],
+        allFilters: {
+            recipients: [], occasions: [], 'gift-types': [], relationships: [],
+            'age-ranges': [], genders: [], characters: [], interests: [], tags: []
+        },
+        showFilters: {},
+        tempFilters: {},
+        messageText: '',
+        // Модальне вікно
+        showModal: false,
+        editMode: false,
+        productForm: {
+            title: '', description: '', price: null, old_price: null, rating: 0,
+            image: '', images: '[]', link: '', is_active: 1, personalization: 0,
+            recipients: [], occasions: [], 'gift-types': [], relationships: [],
+            'age-ranges': [], genders: [], characters: [], interests: [], tags: []
+        },
+        editingProductId: null
+    },
+    mounted() {
+        const token = localStorage.getItem('adminToken');
+        if (token) {
+            this.adminToken = token;
+            this.verifyToken();
+        }
+    },
+    methods: {
+        async login() {
+            if (!this.password) {
+                this.error = 'Введіть пароль';
+                return;
+            }
+            try {
+                const res = await fetch('http://localhost:5000/api/admin/verify-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: this.password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.adminToken = data.token;
+                    localStorage.setItem('adminToken', this.adminToken);
+                    this.authorized = true;
+                    this.error = '';
+                    await this.loadAllFilters();
+                    await this.loadProducts();
+                    await this.loadReviews();
+                } else {
+                    this.error = data.message || 'Невірний пароль';
+                }
+            } catch (err) {
+                this.error = 'Помилка з\'єднання з сервером';
+                console.error(err);
+            }
+        },
+        async verifyToken() {
+            try {
+                const res = await fetch('http://localhost:5000/api/admin/verify-token', {
+                    headers: { 'X-Admin-Token': this.adminToken }
+                });
+                if (res.ok) {
+                    this.authorized = true;
+                    await this.loadAllFilters();
+                    await this.loadProducts();
+                    await this.loadReviews();
+                } else {
+                    localStorage.removeItem('adminToken');
+                    this.authorized = false;
+                }
+            } catch (e) {
+                localStorage.removeItem('adminToken');
+                this.authorized = false;
+            }
+        },
+        async loadAllFilters() {
+            const names = ['recipients', 'occasions', 'gift-types', 'relationships', 'age-ranges', 'genders', 'characters', 'interests', 'tags'];
+            for (const name of names) {
+                try {
+                    const res = await fetch(`http://localhost:5000/api/admin/${name}`);
+                    if (res.ok) this.allFilters[name] = await res.json();
+                    else console.error(`Помилка завантаження ${name}: статус ${res.status}`);
+                } catch(e) { console.error(`Помилка ${name}`, e); }
+            }
+        },
+        async loadProducts() {
+            const res = await fetch('http://localhost:5000/api/products');
+            this.products = await res.json();
+            for (const p of this.products) {
+                if (!this.tempFilters[p.id]) {
+                    this.$set(this.tempFilters, p.id, {
+                        recipients: [...(p.recipient_ids || [])],
+                        occasions: [...(p.occasion_ids || [])],
+                        'gift-types': [...(p.gift_type_ids || [])],
+                        relationships: [...(p.relationship_ids || [])],
+                        'age-ranges': [...(p.age_range_ids || [])],
+                        genders: [...(p.gender_ids || [])],
+                        characters: [...(p.character_ids || [])],
+                        interests: [...(p.interest_ids || [])],
+                        tags: [...(p.tag_ids || [])]
+                    });
+                }
+                if (this.showFilters[p.id] === undefined) this.$set(this.showFilters, p.id, false);
+            }
+        },
+        async loadReviews() {
+            const res = await fetch('http://localhost:5000/api/admin/reviews');
+            this.reviews = await res.json();
+        },
+        toggleFilters(productId) {
+            this.showFilters[productId] = !this.showFilters[productId];
+            this.$forceUpdate();
+        },
+        async saveFilters(productId) {
+            const data = {
+                recipient_ids: this.tempFilters[productId].recipients,
+                occasion_ids: this.tempFilters[productId].occasions,
+                gift_type_ids: this.tempFilters[productId]['gift-types'],
+                relationship_ids: this.tempFilters[productId].relationships,
+                age_range_ids: this.tempFilters[productId]['age-ranges'],
+                gender_ids: this.tempFilters[productId].genders,
+                character_ids: this.tempFilters[productId].characters,
+                interest_ids: this.tempFilters[productId].interests,
+                tag_ids: this.tempFilters[productId].tags
+            };
+            try {
+                const res = await fetch(`http://localhost:5000/api/admin/product-filters/${productId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (res.ok) {
+                    this.showMessage('Фільтри збережено!');
+                    await this.loadProducts();
+                } else {
+                    const err = await res.json();
+                    this.showMessage(err.message || 'Помилка збереження', true);
+                }
+            } catch (err) {
+                this.showMessage('Помилка з\'єднання', true);
+            }
+        },
+        async deleteProduct(productId) {
+            if (!confirm('Видалити цей товар?')) return;
+            try {
+                const res = await fetch(`http://localhost:5000/api/admin/products/${productId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.showMessage('Товар видалено');
+                    await this.loadProducts();
+                } else {
+                    this.showMessage('Помилка видалення', true);
+                }
+            } catch (err) {
+                this.showMessage('Помилка з\'єднання', true);
+            }
+        },
+        async deleteReview(reviewId) {
+            if (!confirm('Видалити цей відгук?')) return;
+            try {
+                const res = await fetch(`http://localhost:5000/api/admin/reviews/${reviewId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.showMessage('Відгук видалено');
+                    await this.loadReviews();
+                } else {
+                    this.showMessage('Помилка видалення', true);
+                }
+            } catch (err) {
+                this.showMessage('Помилка з\'єднання', true);
+            }
+        },
+        openAddProductModal() {
+            this.editMode = false;
+            this.editingProductId = null;
+            this.productForm = {
+                title: '', description: '', price: null, old_price: null, rating: 0,
+                image: '', images: '[]', link: '', is_active: 1, personalization: 0,
+                recipients: [], occasions: [], 'gift-types': [], relationships: [],
+                'age-ranges': [], genders: [], characters: [], interests: [], tags: []
+            };
+            document.getElementById('productModal').style.display = 'flex';
+        },
+        openEditProductModal(product) {
+            this.editMode = true;
+            this.editingProductId = product.id;
+            this.productForm = {
+                title: product.title,
+                description: product.description || '',
+                price: product.price,
+                old_price: product.old_price,
+                rating: product.rating,
+                image: product.image,
+                images: JSON.stringify(product.images || []),
+                link: product.link,
+                is_active: product.is_active ? 1 : 0,
+                personalization: product.personalization ? 1 : 0,
+                recipients: [...(product.recipient_ids || [])],
+                occasions: [...(product.occasion_ids || [])],
+                'gift-types': [...(product.gift_type_ids || [])],
+                relationships: [...(product.relationship_ids || [])],
+                'age-ranges': [...(product.age_range_ids || [])],
+                genders: [...(product.gender_ids || [])],
+                characters: [...(product.character_ids || [])],
+                interests: [...(product.interest_ids || [])],
+                tags: [...(product.tag_ids || [])]
+            };
+            document.getElementById('productModal').style.display = 'flex';
+        },
+        closeModal() {
+            document.getElementById('productModal').style.display = 'none';
+        },
+        async saveProduct() {
+            const url = this.editMode ? `http://localhost:5000/api/admin/products/${this.editingProductId}` : 'http://localhost:5000/api/admin/products';
+            const method = this.editMode ? 'PUT' : 'POST';
+            const productData = {
+                title: this.productForm.title,
+                description: this.productForm.description,
+                price: this.productForm.price,
+                old_price: this.productForm.old_price,
+                rating: this.productForm.rating,
+                image: this.productForm.image,
+                images: JSON.parse(this.productForm.images || '[]'),
+                link: this.productForm.link,
+                is_active: this.productForm.is_active === 1,
+                personalization: this.productForm.personalization === 1,
+                recipient_ids: this.productForm.recipients,
+                occasion_ids: this.productForm.occasions,
+                gift_type_ids: this.productForm['gift-types'],
+                relationship_ids: this.productForm.relationships,
+                age_range_ids: this.productForm['age-ranges'],
+                gender_ids: this.productForm.genders,
+                character_ids: this.productForm.characters,
+                interest_ids: this.productForm.interests,
+                tag_ids: this.productForm.tags
+            };
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(productData)
+                });
+                if (res.ok) {
+                    this.showMessage(this.editMode ? 'Товар оновлено' : 'Товар додано');
+                    this.closeModal();
+                    await this.loadProducts();
+                } else {
+                    const err = await res.json();
+                    this.showMessage(err.message || 'Помилка збереження', true);
+                }
+            } catch (err) {
+                this.showMessage('Помилка з\'єднання', true);
+            }
+        },
+        showMessage(msg, isError = false) {
+            this.messageText = msg;
+            const msgDiv = document.getElementById('message');
+            msgDiv.style.backgroundColor = isError ? '#dc3545' : '#28a745';
+            msgDiv.style.display = 'block';
+            setTimeout(() => {
+                msgDiv.style.display = 'none';
+            }, 3000);
+        }
+    },
+    computed: {
+        filterCategories() {
+            return [
+                { name: 'recipients', label: 'Отримувачі' },
+                { name: 'occasions', label: 'Приводи' },
+                { name: 'gift-types', label: 'Тип подарунка' },
+                { name: 'relationships', label: 'Стосунки' },
+                { name: 'age-ranges', label: 'Вік' },
+                { name: 'genders', label: 'Стать' },
+                { name: 'characters', label: 'Характер' },
+                { name: 'interests', label: 'Інтереси' },
+                { name: 'tags', label: 'Теги' }
+            ];
+        }
+    }
+});
+</script>
+</body>
+</html>

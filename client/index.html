@@ -11,12 +11,15 @@
   <!-- Ваш CSS -->
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none !important; }
+  </style>
 </head>
 <body>
 
-<div id="app">
+<div id="app" v-cloak>
   <!-- ===== HEADER ===== -->
-  <section class="section-block header-section" :class="{ 'catalog-mode': currentPage === 'catalog' }">
+  <section class="section-block header-section" :class="{ 'catalog-mode': currentPage === 'catalog' || currentPage === 'cabinet' }">
     <header class="header-line container-fluid">
       <div class="row w-100 align-items-center">
         <div class="col-md-3 header-logo">
@@ -51,7 +54,7 @@
           </template>
           <template v-else>
             <span class="welcome-msg">Вітаємо, {{ userName || 'Користувач' }}</span>
-            <button class="home-icon" @click="openCabinetModal">🏠</button>
+            <button class="home-icon" @click="goToCabinet">🏠</button>
             <a href="#" class="auth-link" @click.prevent="logout">Вийти</a>
           </template>
         </div>
@@ -59,7 +62,7 @@
     </header>
 
     <!-- ===== ФІЛЬТРИ (горизонтальні) ===== -->
-    <nav class="filters-line">
+    <nav class="filters-line" v-if="currentPage !== 'cabinet'">
       <div v-for="(filter, idx) in filters" :key="idx" class="filter-item"
            @mouseenter="openDropdown(idx)"
            @mouseleave="scheduleClose(idx)">
@@ -117,7 +120,6 @@
 
     <div class="mint-divider"></div>
 
-    <!-- ПОВНИЙ БАНЕР З ТЕКСТОМ -->
     <section class="section-block full-banner-section">
       <img src="img/full-banner.jpg" class="full-banner-img">
       <div class="full-banner-text">
@@ -146,24 +148,42 @@
     </section>
 
     <div class="mint-divider"></div>
-    <section class="section-block last-banner">
-      <div class="banner">
-        <img src="img/banner2.jpg" class="banner-img">
-        <p class="banner-text">текст</p>
-        <button class="banner-btn">Підібрати</button>
+
+    <!-- СЕКЦІЯ ВИПАДКОВОГО ПОДАРУНКУ -->
+    <section class="section-block random-gift-section">
+      <img src="img/banner2.jpg" class="random-gift-img">
+      <div class="random-gift-overlay">
+        <div class="random-gift-content">
+          <h2 class="random-gift-title">✨ Не знаєте, що подарувати? Дозвольте нам вирішити за вас!</h2>
+          <p class="random-gift-subtitle">Спробуй долю – обери <strong>випадковий подарунок</strong>!</p>
+          <ul class="random-gift-list">
+            <li>✨ Коли важко вибрати і зовсім немає ідей</li>
+            <li>🎄 Ідеальний варіант для гри в <strong>Таємного Санту</strong></li>
+            <li>🎁 Сюрприз, який точно запам'ятається</li>
+            <li>⚡ Швидко, весело та непередбачувано</li>
+            <li>💡 Чудовий спосіб розширити свої горизонти</li>
+          </ul>
+          <button class="random-gift-btn" @click="generateRandomGift">🎲 Згенерувати</button>
+        </div>
       </div>
     </section>
   </template>
 
   <!-- ===== СТОРІНКА КАТАЛОГУ ===== -->
-  <div v-else class="catalog-page">
+  <div v-else-if="currentPage === 'catalog'" class="catalog-page">
     <div class="catalog-container">
       <div class="catalog-header">
         <button class="back-home-btn" @click="goHome">← На головну</button>
         <h2>Каталог подарунків</h2>
       </div>
+
+      <div class="random-mode-info" v-if="randomMode">
+        <p>Випадковий подарунок: {{ randomProduct ? randomProduct.title : 'Немає товарів' }}</p>
+        <button class="back-to-catalog-btn" @click="clearRandomMode">Показати всі товари</button>
+      </div>
+
       <div class="catalog-content">
-        <!-- Ліва панель фільтрів -->
+        <!-- Ліва панель фільтрів (додано ціну та вік) -->
         <aside class="catalog-filters">
           <div class="filter-group" v-for="filter in modalFilters" :key="filter.label">
             <h4>{{ filter.label }}</h4>
@@ -173,10 +193,26 @@
               </label>
             </div>
           </div>
+          <!-- Фільтр ціни -->
+          <div class="filter-group">
+            <h4>Ціна</h4>
+            <div class="price-range">
+              <input type="number" v-model.number="priceMin" placeholder="від" class="price-input">
+              <span>-</span>
+              <input type="number" v-model.number="priceMax" placeholder="до" class="price-input">
+            </div>
+          </div>
+          <!-- Фільтр віку -->
+          <div class="filter-group">
+            <h4>Вік</h4>
+            <select v-model="selectedAge" class="age-select">
+              <option :value="null">Будь-який</option>
+              <option v-for="age in ageRanges" :key="age.id" :value="age.id">{{ age.name }}</option>
+            </select>
+          </div>
           <button class="apply-filters-btn" @click="applyFilters">Застосувати фільтри</button>
         </aside>
 
-        <!-- Права частина: сітка товарів -->
         <div class="catalog-products">
           <div v-if="filteredProducts.length === 0" class="no-products">
             <p>Немає товарів, що відповідають фільтрам</p>
@@ -202,33 +238,153 @@
     </div>
   </div>
 
-  <!-- ===== МОДАЛЬНЕ ВІКНО ПІДБОРУ ===== -->
-  <div class="modal-overlay" v-if="showModal" @click.self="closeModal">
-    <div class="modal-container">
-      <button class="modal-close" @click="closeModal">&times;</button>
-      <h3 class="modal-title">Підібрати подарунок</h3>
-      <div class="modal-filters">
-        <div class="modal-filters-row">
-          <div v-for="(filter, idx) in modalFilters" :key="idx" class="modal-filter-item" @mouseenter="openModalDropdown(idx)" @mouseleave="scheduleModalClose(idx)">
-            <button class="modal-filter-btn">
-              {{ filter.selected || filter.label }}
-            </button>
-            <div class="modal-dropdown" v-show="filter.isOpen" @mouseenter="cancelModalClose(idx)" @mouseleave="scheduleModalClose(idx)">
-              <a href="#" v-for="option in filter.options" :key="option" @click.prevent="selectModalOption(idx, option)">
-                {{ option }}
+  <!-- ===== ОСОБИСТИЙ КАБІНЕТ ===== -->
+  <div v-else-if="currentPage === 'cabinet'" class="cabinet-page">
+    <div class="container py-4">
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <button class="btn btn-outline-danger rounded-pill px-4" @click="goHome">← На головну</button>
+        <h2 class="h3 fw-bold mb-0">Особистий кабінет</h2>
+      </div>
+      <div class="card border-0 shadow-sm p-4 mb-5" style="background: #fef6f9; border-radius: 20px;">
+        <div class="row align-items-center">
+          <div class="col-md-6">
+            <p class="mb-2"><strong>Ім'я:</strong> {{ userName }}</p>
+            <p class="mb-0"><strong>Email:</strong> {{ authEmail }}</p>
+          </div>
+          <div class="col-md-6 text-md-end mt-3 mt-md-0">
+            <span class="badge bg-danger px-3 py-2 rounded-pill">Аккаунт активний</span>
+          </div>
+        </div>
+      </div>
+      <h3 class="h4 fw-semibold mb-3">❤️ Обрані товари</h3>
+      <div v-if="favorites.length === 0" class="alert alert-light text-center py-5" role="alert">
+        У вас ще немає обраних товарів. Додайте їх під час перегляду каталогу!
+      </div>
+      <div v-else class="row g-4">
+        <div v-for="(fav, idx) in favorites" :key="idx" class="col-sm-6 col-lg-4 col-xl-3">
+          <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden favorite-card">
+            <img :src="'img/' + fav.image" class="card-img-top" style="height: 200px; object-fit: cover;">
+            <div class="card-body d-flex flex-column">
+              <a href="#" @click.prevent="openProductModal(fav)" class="text-dark text-decoration-none fw-semibold">
+                {{ fav.title }}
               </a>
+              <p class="text-danger fw-bold mt-2">{{ fav.price }} грн</p>
+              <button class="btn btn-sm btn-outline-danger rounded-pill mt-auto align-self-start" @click.stop="removeFromFavorites(fav)">
+                🗑 Видалити
+              </button>
             </div>
           </div>
         </div>
       </div>
-      <div class="modal-submit">
+    </div>
+  </div>
+
+  <!-- ===== МОДАЛЬНІ ВІКНА (залишаються без змін) ===== -->
+  <!-- Модальне вікно підбору подарунка (з опцією "Будь-які") -->
+  <div class="modal-overlay" v-if="appLoaded && showModal" @click.self="closeModal">
+    <div class="modal-container modal-gift-finder">
+      <button class="modal-close" @click="closeModal">&times;</button>
+      <h3 class="modal-title">Підібрати подарунок</h3>
+      <div class="modal-filters">
+        <div class="modal-filters-row">
+          <!-- Вік -->
+          <div class="modal-filter-item" @mouseenter="openAgeDropdown" @mouseleave="scheduleAgeClose">
+            <button class="modal-filter-btn">{{ selectedAgeName || 'Вік' }}</button>
+            <div class="modal-dropdown" v-show="ageDropdownOpen" @mouseenter="cancelAgeClose" @mouseleave="scheduleAgeClose">
+              <a href="#" @click.prevent="selectAgeRange(null, '')">Будь-який</a>
+              <a href="#" v-for="age in ageRanges" :key="age.id" @click.prevent="selectAgeRange(age.id, age.name)">{{ age.name }}</a>
+            </div>
+          </div>
+          <!-- Стать -->
+          <div class="modal-filter-item" @mouseenter="openGenderDropdown" @mouseleave="scheduleGenderClose">
+            <button class="modal-filter-btn">{{ selectedGenderName || 'Стать' }}</button>
+            <div class="modal-dropdown" v-show="genderDropdownOpen" @mouseenter="cancelGenderClose" @mouseleave="scheduleGenderClose">
+              <a href="#" @click.prevent="selectGender(null, '')">Будь-яка</a>
+              <a href="#" v-for="g in genders" :key="g.id" @click.prevent="selectGender(g.id, g.name)">{{ g.name }}</a>
+            </div>
+          </div>
+          <!-- Бюджет -->
+          <div class="modal-filter-item" @mouseenter="openPriceDropdown" @mouseleave="schedulePriceClose">
+            <button class="modal-filter-btn">{{ selectedPriceRange || 'Бюджет' }}</button>
+            <div class="modal-dropdown" v-show="priceDropdownOpen" @mouseenter="cancelPriceClose" @mouseleave="schedulePriceClose">
+              <a href="#" @click.prevent="selectPriceRange(null)">Будь-який</a>
+              <a href="#" @click.prevent="selectPriceRange('до 500 грн')">до 500 грн</a>
+              <a href="#" @click.prevent="selectPriceRange('500-1000 грн')">500-1000 грн</a>
+              <a href="#" @click.prevent="selectPriceRange('1000-2000 грн')">1000-2000 грн</a>
+              <a href="#" @click.prevent="selectPriceRange('2000+ грн')">2000+ грн</a>
+            </div>
+          </div>
+          <!-- Привід -->
+          <div class="modal-filter-item" @mouseenter="openOccasionDropdown" @mouseleave="scheduleOccasionClose">
+            <button class="modal-filter-btn">{{ selectedOccasionName || 'Привід' }}</button>
+            <div class="modal-dropdown" v-show="occasionDropdownOpen" @mouseenter="cancelOccasionClose" @mouseleave="scheduleOccasionClose">
+              <a href="#" @click.prevent="selectOccasion(null, '')">Будь-який</a>
+              <a href="#" v-for="occ in occasions" :key="occ.id" @click.prevent="selectOccasion(occ.id, occ.name)">{{ occ.name }}</a>
+            </div>
+          </div>
+        </div>
+        <div class="modal-filters-row">
+          <!-- Інтереси -->
+          <div class="modal-filter-item" @mouseenter="openInterestDropdown" @mouseleave="scheduleInterestClose">
+            <button class="modal-filter-btn">{{ selectedInterestName || 'Інтереси' }}</button>
+            <div class="modal-dropdown" v-show="interestDropdownOpen" @mouseenter="cancelInterestClose" @mouseleave="scheduleInterestClose">
+              <a href="#" @click.prevent="selectInterest(null, '')">Будь-які</a>
+              <a href="#" v-for="int in interestsList" :key="int.id" @click.prevent="selectInterest(int.id, int.name)">{{ int.name }}</a>
+            </div>
+          </div>
+          <!-- Тип подарунка -->
+          <div class="modal-filter-item" @mouseenter="openGiftTypeDropdown" @mouseleave="scheduleGiftTypeClose">
+            <button class="modal-filter-btn">{{ selectedGiftTypeName || 'Тип подарунка' }}</button>
+            <div class="modal-dropdown" v-show="giftTypeDropdownOpen" @mouseenter="cancelGiftTypeClose" @mouseleave="scheduleGiftTypeClose">
+              <a href="#" @click.prevent="selectGiftType(null, '')">Будь-який</a>
+              <a href="#" v-for="gt in giftTypes" :key="gt.id" @click.prevent="selectGiftType(gt.id, gt.name)">{{ gt.name }}</a>
+            </div>
+          </div>
+          <!-- Стосунки -->
+          <div class="modal-filter-item" @mouseenter="openRelationshipDropdown" @mouseleave="scheduleRelationshipClose">
+            <button class="modal-filter-btn">{{ selectedRelationshipName || 'Стосунки' }}</button>
+            <div class="modal-dropdown" v-show="relationshipDropdownOpen" @mouseenter="cancelRelationshipClose" @mouseleave="scheduleRelationshipClose">
+              <a href="#" @click.prevent="selectRelationship(null, '')">Будь-які</a>
+              <a href="#" v-for="rel in relationships" :key="rel.id" @click.prevent="selectRelationship(rel.id, rel.name)">{{ rel.name }}</a>
+            </div>
+          </div>
+          <!-- Теги -->
+          <div class="modal-filter-item" @mouseenter="openTagDropdown" @mouseleave="scheduleTagClose">
+            <button class="modal-filter-btn">{{ selectedTagName || 'Теги' }}</button>
+            <div class="modal-dropdown" v-show="tagDropdownOpen" @mouseenter="cancelTagClose" @mouseleave="scheduleTagClose">
+              <a href="#" @click.prevent="selectTag(null, '')">Будь-які</a>
+              <a href="#" v-for="tag in tags" :key="tag.id" @click.prevent="selectTag(tag.id, tag.name)">{{ tag.name }}</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-submit right-bottom">
         <button class="modal-submit-btn" @click="findGift">Знайти подарунок</button>
+      </div>
+      <div class="modal-results" v-if="searchResults.length">
+        <h4>Результати підбору ({{ searchResults.length }} товарів)</h4>
+        <div class="products-grid mini-grid">
+          <div v-for="item in searchResults" :key="item.id" class="product-card">
+            <img :src="'img/' + item.image" class="product-img">
+            <div class="product-info">
+              <h3 class="product-title">{{ item.title }}</h3>
+              <div class="product-prices">
+                <span class="current-price">{{ item.price }} грн</span>
+                <span class="old-price" v-if="item.oldPrice">{{ item.oldPrice }} грн</span>
+              </div>
+              <button class="product-btn" @click="openProductModal(item); closeModal()">Переглянути</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="searchAttempted" class="modal-results empty">
+        <p>На жаль, немає товарів, що відповідають вашим критеріям. Спробуйте змінити параметри.</p>
       </div>
     </div>
   </div>
 
-  <!-- ===== МОДАЛЬНЕ ВІКНО АВТОРИЗАЦІЇ ===== -->
-  <div class="modal-overlay" v-if="showAuthModal" @click.self="closeAuthModal">
+  <!-- Модальне вікно авторизації -->
+  <div class="modal-overlay" v-if="appLoaded && showAuthModal" @click.self="closeAuthModal">
     <div class="modal-container auth-modal">
       <button class="modal-close" @click="closeAuthModal">&times;</button>
       <div class="auth-tabs">
@@ -271,67 +427,68 @@
     </div>
   </div>
 
-  <!-- ===== МОДАЛЬНЕ ВІКНО ОСОБИСТОГО КАБІНЕТУ ===== -->
-  <div class="modal-overlay" v-if="showCabinetModal" @click.self="closeCabinetModal">
-    <div class="modal-container cabinet-modal">
-      <button class="modal-close" @click="closeCabinetModal">&times;</button>
-      <h3 class="modal-title">Особистий кабінет</h3>
-      <div class="cabinet-content">
-        <p><strong>Ім'я:</strong> {{ userName }}</p>
-        <p><strong>Email:</strong> {{ authEmail }}</p>
-        <h4>Обрані товари</h4>
-        <div v-if="favorites.length === 0" class="no-favorites">
-          <p>У вас ще немає обраних товарів.</p>
-        </div>
-        <div v-else class="favorites-list">
-          <div v-for="(fav, idx) in favorites" :key="idx" class="favorite-item">
-            <img :src="'img/' + fav.image" class="fav-img">
-            <div class="fav-info">
-              <a href="#" @click.prevent="openProductModal(fav)">{{ fav.title }}</a>
-              <span class="fav-price">{{ fav.price }} грн</span>
-            </div>
-            <button class="remove-fav" @click="removeFromFavorites(fav)">🗑</button>
-          </div>
-        </div>
+  <!-- Модальне вікно детального перегляду товару (збережено оригінальний стиль) -->
+  <div class="modal-overlay" v-if="appLoaded && showProductModal" @click.self="closeProductModal">
+    <div class="modal-container product-modal p-0 rounded-4 shadow-lg" style="max-width: 1100px; width: 90%; background: #fff;">
+      <div class="modal-header border-0 p-4 pb-0">
+        <button type="button" class="btn-close" @click="closeProductModal"></button>
       </div>
-    </div>
-  </div>
-
-  <!-- ===== МОДАЛЬНЕ ВІКНО ДЕТАЛЬНОГО ПЕРЕГЛЯДУ ТОВАРУ ===== -->
-  <div class="modal-overlay" v-if="showProductModal" @click.self="closeProductModal">
-    <div class="modal-container product-modal">
-      <button class="modal-close" @click="closeProductModal">&times;</button>
-      <div class="product-modal-content">
-        <div class="product-gallery">
-          <div class="gallery-main">
-            <img :src="selectedProduct.images[currentImageIndex]" class="gallery-img">
+      <div class="modal-body p-4 pt-0" style="max-height: 80vh; overflow-y: auto;">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="text-center">
+              <img :src="selectedProduct.images[currentImageIndex]" class="img-fluid rounded-4" style="max-height: 350px; object-fit: contain;">
+            </div>
+            <div v-if="selectedProduct.images.length > 1" class="d-flex justify-content-center gap-3 mt-3">
+              <button class="btn btn-outline-secondary rounded-circle" @click="prevImage">←</button>
+              <span class="align-self-center">{{ currentImageIndex+1 }} / {{ selectedProduct.images.length }}</span>
+              <button class="btn btn-outline-secondary rounded-circle" @click="nextImage">→</button>
+            </div>
           </div>
-          <div class="gallery-nav" v-if="selectedProduct.images.length > 1">
-            <button class="gallery-arrow prev" @click="prevImage">&#8249;</button>
-            <span class="gallery-counter">{{ currentImageIndex+1 }} / {{ selectedProduct.images.length }}</span>
-            <button class="gallery-arrow next" @click="nextImage">&#8250;</button>
-          </div>
-        </div>
-        <div class="product-info">
-          <h2 class="product-title">
-            <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer">{{ selectedProduct.title }}</a>
-          </h2>
-          <div class="product-rating">
-            <span v-for="star in 5" :key="star" :class="['star', getStarClass(selectedProduct.rating, star)]" @click="isLoggedIn ? updateRating(selectedProduct, star) : promptLogin()"> ★ </span>
-            <span class="rating-value">{{ selectedProduct.rating }}</span>
-          </div>
-          <div class="product-prices">
-            <span class="current-price">{{ selectedProduct.price }} грн</span>
-            <span class="old-price" v-if="selectedProduct.oldPrice">{{ selectedProduct.oldPrice }} грн</span>
-          </div>
-          <div class="product-description">
-            <p>{{ selectedProduct.description }}</p>
-          </div>
-          <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer" class="product-buy-btn">
-            Купити на Rozetka
-          </a>
-          <div class="product-favorite">
-            <button class="favorite-btn" @click="addToFavorites(selectedProduct)">❤️ Додати в обране</button>
+          <div class="col-md-6">
+            <h2 class="h3 fw-bold">
+              <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer" class="product-title-link-modal">
+                {{ selectedProduct.title }}
+              </a>
+            </h2>
+            <div class="d-flex align-items-center gap-2 my-2">
+              <div class="product-rating">
+                <span v-for="star in 5" :key="star" 
+                      :class="['star', getStarClass(selectedProduct.rating, star)]" 
+                      @click="isLoggedIn ? updateRating(selectedProduct, star) : promptLogin()">★</span>
+              </div>
+              <span class="text-muted">{{ selectedProduct.rating }}</span>
+            </div>
+            <div class="mb-3">
+              <span class="fs-3 fw-bold text-danger">{{ selectedProduct.price }} грн</span>
+              <span v-if="selectedProduct.oldPrice" class="text-muted text-decoration-line-through ms-2">{{ selectedProduct.oldPrice }} грн</span>
+            </div>
+            <p class="text-secondary">{{ selectedProduct.description }}</p>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mt-3">
+              <button class="btn-favorite-modal" @click="addToFavorites(selectedProduct)">❤️ В обране</button>
+              <a :href="selectedProduct.link" target="_blank" rel="noopener noreferrer" class="btn-buy-modal">🛒 Купити на Rozetka</a>
+            </div>
+            <div class="mt-4">
+              <h5 class="fw-semibold">Відгуки</h5>
+              <div v-if="productReviews.length === 0" class="text-muted small">Ще немає відгуків. Будьте першим!</div>
+              <div class="review-list" style="max-height: 200px; overflow-y: auto;">
+                <div v-for="rev in productReviews" :key="rev.id" class="border-bottom pb-2 mb-2">
+                  <strong>{{ rev.user_name }}</strong> <span class="text-warning">★ {{ rev.rating }}</span>
+                  <p class="small mb-0">{{ rev.comment }}</p>
+                </div>
+              </div>
+              <div v-if="isLoggedIn" class="mt-3">
+                <textarea class="form-control rounded-3" rows="2" v-model="reviewComment" placeholder="Ваш відгук..."></textarea>
+                <div class="my-2">
+                  <span>Оцінка: </span>
+                  <span v-for="star in 5" :key="star" @click="reviewRating = star" :class="['star', { full: star <= reviewRating }]">★</span>
+                </div>
+                <button class="btn btn-sm btn-danger rounded-pill" @click="submitReview">✍️ Додати відгук</button>
+              </div>
+              <div v-else class="mt-2 small">
+                <a href="#" @click.prevent="openAuthModal('login')">Увійдіть</a>, щоб залишити відгук.
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -344,24 +501,18 @@
       <div class="row footer-content">
         <div class="col-md-4 footer-col">
           <h3 class="footer-heading">Контакти</h3>
-          <p>+380 XX XXX XX XX</p>
+          <p>+380 66 803 79 67</p>
           <p>info@example.com</p>
         </div>
         <div class="col-md-4 footer-col">
           <h3 class="footer-heading">Навігація</h3>
-          <a href="#">Головна</a>
-          <a href="#">Каталог</a>
-          <a href="#">Про нас</a>
+          <a href="#" @click.prevent="goHome">Головна</a>
+          <a href="#" @click.prevent="goToCatalogPage">Каталог</a>
         </div>
-        <div class="col-md-4 footer-col">
-          <h3 class="footer-heading">Соціальні мережі</h3>
-          <a href="#">Instagram</a>
-          <a href="#">Facebook</a>
-          <a href="#">Telegram</a>
-        </div>
+        <div class="col-md-4 footer-col"></div>
       </div>
       <div class="footer-bottom text-center">
-        <p>&copy; 2026 Подарунки</p>
+        <p>&copy; 2026 GiftGuide</p>
       </div>
     </div>
   </footer>

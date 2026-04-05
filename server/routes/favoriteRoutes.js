@@ -1,6 +1,6 @@
 const express = require('express');
 const { getFavorites, addFavorite, removeFavorite } = require('../controllers/favoriteController');
-const auth = require('../middlewares/authMiddleware');
+const auth = require('../middleware/authMiddleware');
 
 const router = express.Router();
 router.use(auth); // всі маршрути захищені
